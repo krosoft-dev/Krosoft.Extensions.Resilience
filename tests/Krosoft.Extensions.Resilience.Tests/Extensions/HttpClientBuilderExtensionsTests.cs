@@ -19,11 +19,10 @@ public class HttpClientBuilderExtensionsTests : BaseTest
     private static Action<HttpResilienceOptions> Fast(Action<HttpResilienceOptions>? refine = null) =>
         options =>
         {
-            options.AttemptTimeout = TimeSpan.FromMilliseconds(200);
-            options.TotalRequestTimeout = TimeSpan.FromSeconds(5);
+            options.AttemptTimeout.Timeout = TimeSpan.FromMilliseconds(200);
+            options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(5);
             options.Retry.MaxRetryAttempts = 2;
             options.Retry.Delay = TimeSpan.Zero;
-            options.Retry.UseJitter = false;
             options.CircuitBreaker.FailureRatio = 0.5;
             options.CircuitBreaker.MinimumThroughput = 100;
             options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(2);
@@ -33,7 +32,6 @@ public class HttpClientBuilderExtensionsTests : BaseTest
         };
 
     private ServiceProvider CreateProvider(MockHttpMessageHandler handler,
-                                           bool withRetry,
                                            Action<HttpResilienceOptions> configure,
                                            ILoggerProvider? loggerProvider = null) =>
         CreateServiceCollection(services =>
@@ -44,16 +42,7 @@ public class HttpClientBuilderExtensionsTests : BaseTest
             }
 
             var httpClientBuilder = services.AddHttpClient(ClientName, client => client.BaseAddress = new Uri("https://krosoft.local/"));
-
-            if (withRetry)
-            {
-                httpClientBuilder.AddResilienceHandlerWithRetry(configure);
-            }
-            else
-            {
-                httpClientBuilder.AddResilienceHandlerWithoutRetry(configure);
-            }
-
+            httpClientBuilder.AddResilience(configure);
             httpClientBuilder.ConfigurePrimaryHttpMessageHandler(() => handler);
         });
 
@@ -61,10 +50,14 @@ public class HttpClientBuilderExtensionsTests : BaseTest
         provider.GetRequiredService<IHttpClientFactory>().CreateClient(ClientName);
 
     [TestMethod]
-    public async Task AddResilienceHandlerWithRetry_ErreurServeur_RejoueLeNombreDeTentativesConfigure()
+    public async Task RetryActif_ErreurServeur_RejoueLeNombreDeTentativesConfigure()
     {
         var handler = MockHttpMessageHandler.Always(HttpStatusCode.InternalServerError);
-        await using var provider = CreateProvider(handler, true, Fast(options => options.Retry.MaxRetryAttempts = 2));
+        await using var provider = CreateProvider(handler, Fast(options =>
+        {
+            options.Retry.Enabled = true;
+            options.Retry.MaxRetryAttempts = 2;
+        }));
 
         var response = await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
 
@@ -73,10 +66,14 @@ public class HttpClientBuilderExtensionsTests : BaseTest
     }
 
     [TestMethod]
-    public async Task AddResilienceHandlerWithRetry_ErreurServeurPuisSucces_RetourneLaReponseDeLaDerniereTentative()
+    public async Task RetryActif_ErreurServeurPuisSucces_RetourneLaReponseDeLaDerniereTentative()
     {
         var handler = MockHttpMessageHandler.From(attempt => attempt < 3 ? HttpStatusCode.InternalServerError : HttpStatusCode.OK);
-        await using var provider = CreateProvider(handler, true, Fast(options => options.Retry.MaxRetryAttempts = 2));
+        await using var provider = CreateProvider(handler, Fast(options =>
+        {
+            options.Retry.Enabled = true;
+            options.Retry.MaxRetryAttempts = 2;
+        }));
 
         var response = await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
 
@@ -85,10 +82,10 @@ public class HttpClientBuilderExtensionsTests : BaseTest
     }
 
     [TestMethod]
-    public async Task AddResilienceHandlerWithRetry_ReponseValide_NeRejouePas()
+    public async Task RetryActif_ReponseValide_NeRejouePas()
     {
         var handler = MockHttpMessageHandler.Always(HttpStatusCode.OK);
-        await using var provider = CreateProvider(handler, true, Fast());
+        await using var provider = CreateProvider(handler, Fast(options => options.Retry.Enabled = true));
 
         var response = await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
 
@@ -97,10 +94,10 @@ public class HttpClientBuilderExtensionsTests : BaseTest
     }
 
     [TestMethod]
-    public async Task AddResilienceHandlerWithoutRetry_ErreurServeur_NeRejouePas()
+    public async Task RetryInactif_ErreurServeur_NeRejouePas()
     {
         var handler = MockHttpMessageHandler.Always(HttpStatusCode.InternalServerError);
-        await using var provider = CreateProvider(handler, false, Fast(options => options.Retry.MaxRetryAttempts = 2));
+        await using var provider = CreateProvider(handler, Fast());
 
         var response = await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
 
@@ -109,10 +106,14 @@ public class HttpClientBuilderExtensionsTests : BaseTest
     }
 
     [TestMethod]
-    public async Task AddResilienceHandlerWithRetry_ServeurQuiPend_AppliqueLeTimeoutParTentativeEtRejoue()
+    public async Task RetryActif_ServeurQuiPend_AppliqueLeTimeoutParTentativeEtRejoue()
     {
         var handler = MockHttpMessageHandler.Delayed(TimeSpan.FromSeconds(5));
-        await using var provider = CreateProvider(handler, true, Fast(options => options.Retry.MaxRetryAttempts = 1));
+        await using var provider = CreateProvider(handler, Fast(options =>
+        {
+            options.Retry.Enabled = true;
+            options.Retry.MaxRetryAttempts = 1;
+        }));
         var httpClient = GetHttpClient(provider);
 
         Check.ThatCode(() => httpClient.GetAsync(RequestUri, CancellationToken.None))
@@ -122,10 +123,10 @@ public class HttpClientBuilderExtensionsTests : BaseTest
     }
 
     [TestMethod]
-    public async Task AddResilienceHandlerWithoutRetry_ServeurQuiPend_AppliqueLeTimeoutParTentativeSansRejouer()
+    public async Task RetryInactif_ServeurQuiPend_AppliqueLeTimeoutParTentativeSansRejouer()
     {
         var handler = MockHttpMessageHandler.Delayed(TimeSpan.FromSeconds(5));
-        await using var provider = CreateProvider(handler, false, Fast());
+        await using var provider = CreateProvider(handler, Fast());
         var httpClient = GetHttpClient(provider);
 
         Check.ThatCode(() => httpClient.GetAsync(RequestUri, CancellationToken.None))
@@ -135,11 +136,28 @@ public class HttpClientBuilderExtensionsTests : BaseTest
     }
 
     [TestMethod]
-    public async Task AddResilienceHandlerWithRetry_ErreurServeur_JournaliseViaLaTelemetrieDuPipeline()
+    public async Task TotalRequestTimeoutDesactive_ServeurQuiPend_AppliqueLAttemptTimeout()
+    {
+        var handler = MockHttpMessageHandler.Delayed(TimeSpan.FromSeconds(5));
+        await using var provider = CreateProvider(handler, Fast(options => options.TotalRequestTimeout.Enabled = false));
+        var httpClient = GetHttpClient(provider);
+
+        Check.ThatCode(() => httpClient.GetAsync(RequestUri, CancellationToken.None))
+             .Throws<TimeoutRejectedException>();
+
+        Check.That(handler.CallCount).IsEqualTo(1);
+    }
+
+    [TestMethod]
+    public async Task RetryActif_ErreurServeur_JournaliseViaLaTelemetrieDuPipeline()
     {
         var loggerProvider = new TestLoggerProvider();
         var handler = MockHttpMessageHandler.Always(HttpStatusCode.InternalServerError);
-        await using var provider = CreateProvider(handler, true, Fast(options => options.Retry.MaxRetryAttempts = 1), loggerProvider);
+        await using var provider = CreateProvider(handler, Fast(options =>
+        {
+            options.Retry.Enabled = true;
+            options.Retry.MaxRetryAttempts = 1;
+        }), loggerProvider);
 
         await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
 
@@ -153,11 +171,11 @@ public class HttpClientBuilderExtensionsTests : BaseTest
     }
 
     [TestMethod]
-    public async Task AddResilienceHandlerWithoutRetry_SeuilDEchecsAtteint_OuvreLeCircuitPuisLeRefermeApresBreakDuration()
+    public async Task CircuitBreakerActif_SeuilDEchecsAtteint_OuvreLeCircuitPuisLeRefermeApresBreakDuration()
     {
         var isDown = true;
         var handler = MockHttpMessageHandler.From(_ => isDown ? HttpStatusCode.InternalServerError : HttpStatusCode.OK);
-        await using var provider = CreateProvider(handler, false, Fast(options =>
+        await using var provider = CreateProvider(handler, Fast(options =>
         {
             options.CircuitBreaker.MinimumThroughput = 2;
             options.CircuitBreaker.FailureRatio = 0.5;
@@ -183,5 +201,25 @@ public class HttpClientBuilderExtensionsTests : BaseTest
 
         Check.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         Check.That(handler.CallCount).IsEqualTo(3);
+    }
+
+    [TestMethod]
+    public async Task CircuitBreakerDesactive_EchecsRepetes_NOuvreJamaisLeCircuit()
+    {
+        var handler = MockHttpMessageHandler.Always(HttpStatusCode.InternalServerError);
+        await using var provider = CreateProvider(handler, Fast(options =>
+        {
+            options.CircuitBreaker.Enabled = false;
+            options.CircuitBreaker.MinimumThroughput = 2;
+        }));
+        var httpClient = GetHttpClient(provider);
+
+        for (var i = 0; i < 5; i++)
+        {
+            var response = await httpClient.GetAsync(RequestUri, CancellationToken.None);
+            Check.That(response.StatusCode).IsEqualTo(HttpStatusCode.InternalServerError);
+        }
+
+        Check.That(handler.CallCount).IsEqualTo(5);
     }
 }

@@ -1,4 +1,4 @@
-﻿using Krosoft.Extensions.Resilience.Models;
+using Krosoft.Extensions.Resilience.Models;
 using Krosoft.Extensions.Resilience.Validations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,17 +14,8 @@ namespace Krosoft.Extensions.Resilience.Extensions;
 
 public static class HttpClientBuilderExtensions
 {
-    public static IHttpClientBuilder AddResilienceHandlerWithRetry(this IHttpClientBuilder httpClientBuilder,
-                                                                   Action<HttpResilienceOptions>? configure = null) =>
-        httpClientBuilder.AddResilienceHandler(true, configure);
-
-    public static IHttpClientBuilder AddResilienceHandlerWithoutRetry(this IHttpClientBuilder httpClientBuilder,
-                                                                      Action<HttpResilienceOptions>? configure = null) =>
-        httpClientBuilder.AddResilienceHandler(false, configure);
-
-    private static IHttpClientBuilder AddResilienceHandler(this IHttpClientBuilder httpClientBuilder,
-                                                           bool withRetry,
-                                                           Action<HttpResilienceOptions>? configure)
+    public static IHttpClientBuilder AddResilience(this IHttpClientBuilder httpClientBuilder,
+                                                   Action<HttpResilienceOptions>? configure = null)
     {
         var clientName = httpClientBuilder.Name;
 
@@ -47,13 +38,16 @@ public static class HttpClientBuilderExtensions
             context.EnableReloads<HttpResilienceOptions>(clientName);
             var options = context.GetOptions<HttpResilienceOptions>(clientName);
 
-            pipelineBuilder.AddTimeout(new HttpTimeoutStrategyOptions
+            if (options.TotalRequestTimeout.Enabled)
             {
-                Name = "TotalRequestTimeout",
-                Timeout = options.TotalRequestTimeout
-            });
+                pipelineBuilder.AddTimeout(new HttpTimeoutStrategyOptions
+                {
+                    Name = "TotalRequestTimeout",
+                    Timeout = options.TotalRequestTimeout.Timeout
+                });
+            }
 
-            if (withRetry)
+            if (options.Retry.Enabled)
             {
                 pipelineBuilder.AddRetry(new HttpRetryStrategyOptions
                 {
@@ -61,24 +55,30 @@ public static class HttpClientBuilderExtensions
                     MaxRetryAttempts = options.Retry.MaxRetryAttempts,
                     Delay = options.Retry.Delay,
                     BackoffType = DelayBackoffType.Exponential,
-                    UseJitter = options.Retry.UseJitter
+                    UseJitter = true
                 });
             }
 
-            pipelineBuilder.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+            if (options.CircuitBreaker.Enabled)
             {
-                Name = "CircuitBreaker",
-                FailureRatio = options.CircuitBreaker.FailureRatio,
-                MinimumThroughput = options.CircuitBreaker.MinimumThroughput,
-                SamplingDuration = options.CircuitBreaker.SamplingDuration,
-                BreakDuration = options.CircuitBreaker.BreakDuration
-            });
+                pipelineBuilder.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+                {
+                    Name = "CircuitBreaker",
+                    FailureRatio = options.CircuitBreaker.FailureRatio,
+                    MinimumThroughput = options.CircuitBreaker.MinimumThroughput,
+                    SamplingDuration = options.CircuitBreaker.SamplingDuration,
+                    BreakDuration = options.CircuitBreaker.BreakDuration
+                });
+            }
 
-            pipelineBuilder.AddTimeout(new HttpTimeoutStrategyOptions
+            if (options.AttemptTimeout.Enabled)
             {
-                Name = "AttemptTimeout",
-                Timeout = options.AttemptTimeout
-            });
+                pipelineBuilder.AddTimeout(new HttpTimeoutStrategyOptions
+                {
+                    Name = "AttemptTimeout",
+                    Timeout = options.AttemptTimeout.Timeout
+                });
+            }
         });
 
         return httpClientBuilder;
@@ -91,7 +91,7 @@ public static class HttpClientBuilderExtensions
         if (services.Any(descriptor => descriptor.ServiceType == typeof(ResilienceHandlerMarker)
                                        && marker.Equals(descriptor.ImplementationInstance)))
         {
-            throw new InvalidOperationException($"Un pipeline de résilience est déjà enregistré pour le client HTTP '{clientName}'. Utilisez soit {nameof(AddResilienceHandlerWithRetry)}, soit {nameof(AddResilienceHandlerWithoutRetry)}, mais pas les deux.");
+            throw new InvalidOperationException($"Un pipeline de résilience est déjà enregistré pour le client HTTP '{clientName}'. N'appelez '{nameof(AddResilience)}' qu'une seule fois par client.");
         }
 
         services.AddSingleton(marker);

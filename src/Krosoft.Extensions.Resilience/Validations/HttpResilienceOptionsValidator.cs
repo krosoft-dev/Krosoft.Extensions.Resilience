@@ -16,6 +16,7 @@ internal sealed class HttpResilienceOptionsValidator : IValidateOptions<HttpResi
     {
         var failures = new List<string>();
 
+        ValidatePipelineNotEmpty(options, failures);
         ValidateTimeouts(options, failures);
         ValidateRetry(options.Retry, failures);
         ValidateCircuitBreaker(options, failures);
@@ -41,22 +42,47 @@ internal sealed class HttpResilienceOptionsValidator : IValidateOptions<HttpResi
         }
     }
 
+    private static void ValidatePipelineNotEmpty(HttpResilienceOptions options, List<string> failures)
+    {
+        if (!options.TotalRequestTimeout.Enabled
+            && !options.AttemptTimeout.Enabled
+            && !options.Retry.Enabled
+            && !options.CircuitBreaker.Enabled)
+        {
+            failures.Add("Au moins une stratégie de résilience doit être activée (TotalRequestTimeout, AttemptTimeout, Retry ou CircuitBreaker) : un pipeline vide n'est pas autorisé.");
+        }
+    }
+
     private static void ValidateTimeouts(HttpResilienceOptions options, List<string> failures)
     {
-        CheckRange(options.AttemptTimeout, MinTimeout, MaxDuration, nameof(HttpResilienceOptions.AttemptTimeout), failures);
-        CheckRange(options.TotalRequestTimeout, MinTimeout, MaxDuration, nameof(HttpResilienceOptions.TotalRequestTimeout), failures);
-
-        if (options.TotalRequestTimeout < options.AttemptTimeout)
+        if (options.AttemptTimeout.Enabled)
         {
-            failures.Add($"'{nameof(HttpResilienceOptions.TotalRequestTimeout)}' ({options.TotalRequestTimeout}) doit être supérieur ou égal à '{nameof(HttpResilienceOptions.AttemptTimeout)}' ({options.AttemptTimeout}).");
+            CheckRange(options.AttemptTimeout.Timeout, MinTimeout, MaxDuration, nameof(HttpResilienceOptions.AttemptTimeout), failures);
+        }
+
+        if (options.TotalRequestTimeout.Enabled)
+        {
+            CheckRange(options.TotalRequestTimeout.Timeout, MinTimeout, MaxDuration, nameof(HttpResilienceOptions.TotalRequestTimeout), failures);
+        }
+
+        if (options.TotalRequestTimeout.Enabled
+            && options.AttemptTimeout.Enabled
+            && options.TotalRequestTimeout.Timeout < options.AttemptTimeout.Timeout)
+        {
+            failures.Add($"'{nameof(HttpResilienceOptions.TotalRequestTimeout)}' ({options.TotalRequestTimeout.Timeout}) doit être supérieur ou égal à '{nameof(HttpResilienceOptions.AttemptTimeout)}' ({options.AttemptTimeout.Timeout}).");
         }
     }
 
     private static void ValidateRetry(HttpRetryOptions retry, List<string> failures)
     {
+        if (!retry.Enabled)
+        {
+            return;
+        }
+
         if (retry.MaxRetryAttempts < 1)
         {
-            failures.Add($"'{RetryPrefix}.{nameof(HttpRetryOptions.MaxRetryAttempts)}' doit être supérieur ou égal à 1, or il vaut {retry.MaxRetryAttempts}. Pour désactiver le retry, utilisez l'extension sans retry (AddResilienceHandlerWithoutRetry).");
+            failures.Add($"'{RetryPrefix}.{nameof(HttpRetryOptions.MaxRetryAttempts)}' doit être supérieur ou égal à 1, or il vaut {retry.MaxRetryAttempts}. Pour désactiver le retry, mettez '{RetryPrefix}.{nameof(HttpRetryOptions.Enabled)}' à false.");
         }
 
         CheckRange(retry.Delay, TimeSpan.Zero, MaxDuration, $"{RetryPrefix}.{nameof(HttpRetryOptions.Delay)}", failures);
@@ -65,6 +91,10 @@ internal sealed class HttpResilienceOptionsValidator : IValidateOptions<HttpResi
     private static void ValidateCircuitBreaker(HttpResilienceOptions options, List<string> failures)
     {
         var circuitBreaker = options.CircuitBreaker;
+        if (!circuitBreaker.Enabled)
+        {
+            return;
+        }
 
         if (circuitBreaker.FailureRatio is <= 0 or > 1)
         {
@@ -79,10 +109,13 @@ internal sealed class HttpResilienceOptionsValidator : IValidateOptions<HttpResi
         CheckRange(circuitBreaker.SamplingDuration, MinCircuitBreakerDuration, MaxDuration, $"{CircuitBreakerPrefix}.{nameof(HttpCircuitBreakerOptions.SamplingDuration)}", failures);
         CheckRange(circuitBreaker.BreakDuration, MinCircuitBreakerDuration, MaxDuration, $"{CircuitBreakerPrefix}.{nameof(HttpCircuitBreakerOptions.BreakDuration)}", failures);
 
-        var minimumSamplingDuration = options.AttemptTimeout * 2;
-        if (circuitBreaker.SamplingDuration < minimumSamplingDuration)
+        if (options.AttemptTimeout.Enabled)
         {
-            failures.Add($"'{CircuitBreakerPrefix}.{nameof(HttpCircuitBreakerOptions.SamplingDuration)}' ({circuitBreaker.SamplingDuration}) doit valoir au moins le double de '{nameof(HttpResilienceOptions.AttemptTimeout)}' ({options.AttemptTimeout}), soit {minimumSamplingDuration}, afin que la fenêtre d'observation puisse contenir plusieurs tentatives.");
+            var minimumSamplingDuration = options.AttemptTimeout.Timeout * 2;
+            if (circuitBreaker.SamplingDuration < minimumSamplingDuration)
+            {
+                failures.Add($"'{CircuitBreakerPrefix}.{nameof(HttpCircuitBreakerOptions.SamplingDuration)}' ({circuitBreaker.SamplingDuration}) doit valoir au moins le double de '{nameof(HttpResilienceOptions.AttemptTimeout)}' ({options.AttemptTimeout.Timeout}), soit {minimumSamplingDuration}, afin que la fenêtre d'observation puisse contenir plusieurs tentatives.");
+            }
         }
     }
 }
