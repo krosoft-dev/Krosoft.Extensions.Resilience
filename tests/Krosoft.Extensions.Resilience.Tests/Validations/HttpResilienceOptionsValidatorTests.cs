@@ -12,25 +12,23 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     private readonly HttpResilienceOptionsValidator _validator = new();
 
     [TestMethod]
-    public void Validate_OptionsParDefaut_EstValide()
+    public void Validate_OptionsParDefaut_EchouePipelineVide()
     {
         var result = _validator.Validate(ClientName, new HttpResilienceOptions());
 
-        Check.That(result.Succeeded).IsTrue();
+        Check.That(result.Failed).IsTrue();
+        Check.That(result.FailureMessage).Contains("pipeline vide");
     }
 
     [TestMethod]
-    public void Validate_TousLesBlocsDesactives_Echoue()
+    public void Validate_UnSeulBlocActive_EstValide()
     {
         var options = new HttpResilienceOptions();
-        options.TotalRequestTimeout.Enabled = false;
-        options.AttemptTimeout.Enabled = false;
-        options.CircuitBreaker.Enabled = false;
+        options.AttemptTimeout.Enabled = true;
 
         var result = _validator.Validate(ClientName, options);
 
-        Check.That(result.Failed).IsTrue();
-        Check.That(result.FailureMessage).Contains("pipeline vide");
+        Check.That(result.Succeeded).IsTrue();
     }
 
     [TestMethod]
@@ -38,10 +36,9 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     {
         var options = new HttpResilienceOptions
         {
-            AttemptTimeout = new HttpTimeoutOptions { Timeout = TimeSpan.FromSeconds(30) },
-            TotalRequestTimeout = new HttpTimeoutOptions { Timeout = TimeSpan.FromSeconds(10) }
+            AttemptTimeout = new HttpTimeoutOptions { Enabled = true, Timeout = TimeSpan.FromSeconds(30) },
+            TotalRequestTimeout = new HttpTimeoutOptions { Enabled = true, Timeout = TimeSpan.FromSeconds(10) }
         };
-        options.CircuitBreaker.Enabled = false;
 
         var result = _validator.Validate(ClientName, options);
 
@@ -56,8 +53,9 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     {
         var options = new HttpResilienceOptions
         {
-            AttemptTimeout = new HttpTimeoutOptions { Timeout = TimeSpan.FromSeconds(10) }
+            AttemptTimeout = new HttpTimeoutOptions { Enabled = true, Timeout = TimeSpan.FromSeconds(10) }
         };
+        options.CircuitBreaker.Enabled = true;
         options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(5);
 
         var result = _validator.Validate(ClientName, options);
@@ -70,7 +68,7 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     public void Validate_AttemptTimeoutDesactive_IgnoreLaContrainteSurSamplingDuration()
     {
         var options = new HttpResilienceOptions();
-        options.AttemptTimeout.Enabled = false;
+        options.CircuitBreaker.Enabled = true;
         options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(1);
 
         var result = _validator.Validate(ClientName, options);
@@ -79,11 +77,11 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     }
 
     [TestMethod]
-    public void Validate_AttemptTimeoutNul_Echoue()
+    public void Validate_AttemptTimeoutActifNul_Echoue()
     {
         var options = new HttpResilienceOptions
         {
-            AttemptTimeout = new HttpTimeoutOptions { Timeout = TimeSpan.Zero }
+            AttemptTimeout = new HttpTimeoutOptions { Enabled = true, Timeout = TimeSpan.Zero }
         };
 
         var result = _validator.Validate(ClientName, options);
@@ -96,6 +94,7 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     public void Validate_RetryDesactive_IgnoreSesSeuils()
     {
         var options = new HttpResilienceOptions();
+        options.AttemptTimeout.Enabled = true;
         options.Retry.Enabled = false;
         options.Retry.MaxRetryAttempts = 0;
 
@@ -121,6 +120,7 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     public void Validate_CircuitBreakerDesactive_IgnoreSesSeuils()
     {
         var options = new HttpResilienceOptions();
+        options.AttemptTimeout.Enabled = true;
         options.CircuitBreaker.Enabled = false;
         options.CircuitBreaker.MinimumThroughput = 0;
         options.CircuitBreaker.FailureRatio = 5;
@@ -134,6 +134,7 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     public void Validate_MinimumThroughputInferieurADeux_Echoue()
     {
         var options = new HttpResilienceOptions();
+        options.CircuitBreaker.Enabled = true;
         options.CircuitBreaker.MinimumThroughput = 1;
 
         var result = _validator.Validate(ClientName, options);
@@ -146,6 +147,7 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     public void Validate_FailureRatioHorsBornes_Echoue()
     {
         var options = new HttpResilienceOptions();
+        options.CircuitBreaker.Enabled = true;
         options.CircuitBreaker.FailureRatio = 1.5;
 
         var result = _validator.Validate(ClientName, options);
@@ -158,6 +160,7 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     public void Validate_BreakDurationTropCourte_Echoue()
     {
         var options = new HttpResilienceOptions();
+        options.CircuitBreaker.Enabled = true;
         options.CircuitBreaker.BreakDuration = TimeSpan.FromMilliseconds(100);
 
         var result = _validator.Validate(ClientName, options);
@@ -171,10 +174,11 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     {
         var options = new HttpResilienceOptions
         {
-            AttemptTimeout = new HttpTimeoutOptions { Timeout = TimeSpan.Zero }
+            AttemptTimeout = new HttpTimeoutOptions { Enabled = true, Timeout = TimeSpan.Zero }
         };
         options.Retry.Enabled = true;
         options.Retry.MaxRetryAttempts = 0;
+        options.CircuitBreaker.Enabled = true;
         options.CircuitBreaker.MinimumThroughput = 0;
 
         var result = _validator.Validate(ClientName, options);
@@ -188,7 +192,7 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     {
         var options = new HttpResilienceOptions
         {
-            AttemptTimeout = new HttpTimeoutOptions { Timeout = TimeSpan.Zero }
+            AttemptTimeout = new HttpTimeoutOptions { Enabled = true, Timeout = TimeSpan.Zero }
         };
 
         var result = _validator.Validate(null, options);

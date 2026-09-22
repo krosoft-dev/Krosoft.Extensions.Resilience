@@ -16,13 +16,18 @@ public class HttpClientBuilderExtensionsTests : BaseTest
     private const string ClientName = "client-resilience";
     private const string RequestUri = "/todos/1";
 
+    // Timeouts et circuit breaker activés ; le retry reste opt-in, activé par test via refine.
     private static Action<HttpResilienceOptions> Fast(Action<HttpResilienceOptions>? refine = null) =>
         options =>
         {
-            options.AttemptTimeout.Timeout = TimeSpan.FromMilliseconds(200);
+            options.TotalRequestTimeout.Enabled = true;
             options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(5);
+            options.AttemptTimeout.Enabled = true;
+            options.AttemptTimeout.Timeout = TimeSpan.FromMilliseconds(200);
+            options.Retry.Enabled = false;
             options.Retry.MaxRetryAttempts = 2;
             options.Retry.Delay = TimeSpan.Zero;
+            options.CircuitBreaker.Enabled = true;
             options.CircuitBreaker.FailureRatio = 0.5;
             options.CircuitBreaker.MinimumThroughput = 100;
             options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(2);

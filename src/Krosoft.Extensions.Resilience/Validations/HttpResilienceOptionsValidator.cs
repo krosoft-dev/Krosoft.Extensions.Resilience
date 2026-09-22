@@ -44,10 +44,7 @@ internal sealed class HttpResilienceOptionsValidator : IValidateOptions<HttpResi
 
     private static void ValidatePipelineNotEmpty(HttpResilienceOptions options, List<string> failures)
     {
-        if (!options.TotalRequestTimeout.Enabled
-            && !options.AttemptTimeout.Enabled
-            && !options.Retry.Enabled
-            && !options.CircuitBreaker.Enabled)
+        if (!options.TotalRequestTimeout.Enabled && !options.AttemptTimeout.Enabled && !options.Retry.Enabled && !options.CircuitBreaker.Enabled)
         {
             failures.Add("Au moins une stratégie de résilience doit être activée (TotalRequestTimeout, AttemptTimeout, Retry ou CircuitBreaker) : un pipeline vide n'est pas autorisé.");
         }
@@ -65,9 +62,7 @@ internal sealed class HttpResilienceOptionsValidator : IValidateOptions<HttpResi
             CheckRange(options.TotalRequestTimeout.Timeout, MinTimeout, MaxDuration, nameof(HttpResilienceOptions.TotalRequestTimeout), failures);
         }
 
-        if (options.TotalRequestTimeout.Enabled
-            && options.AttemptTimeout.Enabled
-            && options.TotalRequestTimeout.Timeout < options.AttemptTimeout.Timeout)
+        if (options.TotalRequestTimeout.Enabled && options.AttemptTimeout.Enabled && options.TotalRequestTimeout.Timeout < options.AttemptTimeout.Timeout)
         {
             failures.Add($"'{nameof(HttpResilienceOptions.TotalRequestTimeout)}' ({options.TotalRequestTimeout.Timeout}) doit être supérieur ou égal à '{nameof(HttpResilienceOptions.AttemptTimeout)}' ({options.AttemptTimeout.Timeout}).");
         }
