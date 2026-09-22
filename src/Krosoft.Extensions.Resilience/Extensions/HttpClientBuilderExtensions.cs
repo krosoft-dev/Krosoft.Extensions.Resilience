@@ -6,9 +6,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 using Polly;
-using Polly.CircuitBreaker;
-using Polly.Retry;
-using Polly.Timeout;
 
 namespace Krosoft.Extensions.Resilience.Extensions;
 
@@ -88,8 +85,7 @@ public static class HttpClientBuilderExtensions
     {
         var marker = new ResilienceHandlerMarker(clientName);
 
-        if (services.Any(descriptor => descriptor.ServiceType == typeof(ResilienceHandlerMarker)
-                                       && marker.Equals(descriptor.ImplementationInstance)))
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(ResilienceHandlerMarker) && marker.Equals(descriptor.ImplementationInstance)))
         {
             throw new InvalidOperationException($"Un pipeline de résilience est déjà enregistré pour le client HTTP '{clientName}'. N'appelez '{nameof(AddResilience)}' qu'une seule fois par client.");
         }
