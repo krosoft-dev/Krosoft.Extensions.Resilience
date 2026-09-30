@@ -30,6 +30,17 @@ public static class HttpClientBuilderExtensions
             optionsBuilder.Configure(configure);
         }
 
+        // HttpClient.Timeout (100 s par défaut) s'applique par-dessus tout le pipeline et couperait avant TotalRequestTimeout :
+        // dès que le pipeline porte le timeout global, on neutralise celui du HttpClient.
+        httpClientBuilder.ConfigureHttpClient((serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptionsMonitor<HttpResilienceOptions>>().Get(clientName);
+            if (options.TotalRequestTimeout.Enabled)
+            {
+                client.Timeout = Timeout.InfiniteTimeSpan;
+            }
+        });
+
         httpClientBuilder.AddResilienceHandler($"{clientName}-krosoft", (pipelineBuilder, context) =>
         {
             context.EnableReloads<HttpResilienceOptions>(clientName);
