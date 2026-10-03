@@ -55,6 +55,24 @@ public class HttpClientBuilderExtensionsTests : BaseTest
         provider.GetRequiredService<IHttpClientFactory>().CreateClient(ClientName);
 
     [TestMethod]
+    public async Task TotalRequestTimeoutActif_HttpClient_NeutraliseLeTimeoutDuHttpClient()
+    {
+        var handler = MockHttpMessageHandler.Always(HttpStatusCode.OK);
+        await using var provider = CreateProvider(handler, Fast());
+
+        Check.That(GetHttpClient(provider).Timeout).IsEqualTo(Timeout.InfiniteTimeSpan);
+    }
+
+    [TestMethod]
+    public async Task TotalRequestTimeoutDesactive_HttpClient_ConserveLeTimeoutParDefautDuHttpClient()
+    {
+        var handler = MockHttpMessageHandler.Always(HttpStatusCode.OK);
+        await using var provider = CreateProvider(handler, Fast(options => options.TotalRequestTimeout.Enabled = false));
+
+        Check.That(GetHttpClient(provider).Timeout).IsEqualTo(TimeSpan.FromSeconds(100));
+    }
+
+    [TestMethod]
     public async Task RetryActif_ErreurServeur_RejoueLeNombreDeTentativesConfigure()
     {
         var handler = MockHttpMessageHandler.Always(HttpStatusCode.InternalServerError);
