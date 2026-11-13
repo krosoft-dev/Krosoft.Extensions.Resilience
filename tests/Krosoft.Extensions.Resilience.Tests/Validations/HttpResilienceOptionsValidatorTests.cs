@@ -117,6 +117,39 @@ public class HttpResilienceOptionsValidatorTests : BaseTest
     }
 
     [TestMethod]
+    [DataRow(99)]
+    [DataRow(600)]
+    [DataRow(0)]
+    [DataRow(-404)]
+    public void Validate_RetryActifCodeSupplementaireHorsPlage_Echoue(int statusCode)
+    {
+        var options = new HttpResilienceOptions();
+        options.Retry.Enabled = true;
+        options.Retry.AdditionalStatusCodes = [404, statusCode];
+
+        var result = _validator.Validate(ClientName, options);
+
+        Check.That(result.Failed).IsTrue();
+        Check.That(result.Failures).HasSize(1);
+        Check.That(result.FailureMessage).Contains(nameof(HttpRetryOptions.AdditionalStatusCodes), statusCode.ToString());
+    }
+
+    [TestMethod]
+    [DataRow(100)]
+    [DataRow(404)]
+    [DataRow(599)]
+    public void Validate_RetryActifCodeSupplementaireDansLaPlage_EstValide(int statusCode)
+    {
+        var options = new HttpResilienceOptions();
+        options.Retry.Enabled = true;
+        options.Retry.AdditionalStatusCodes = [statusCode];
+
+        var result = _validator.Validate(ClientName, options);
+
+        Check.That(result.Succeeded).IsTrue();
+    }
+
+    [TestMethod]
     public void Validate_CircuitBreakerDesactive_IgnoreSesSeuils()
     {
         var options = new HttpResilienceOptions();

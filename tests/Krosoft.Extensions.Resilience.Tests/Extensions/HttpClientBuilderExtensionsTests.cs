@@ -37,8 +37,9 @@ public class HttpClientBuilderExtensionsTests : BaseTest
         };
 
     private ServiceProvider CreateProvider(MockHttpMessageHandler handler,
-                                           Action<HttpResilienceOptions> configure,
-                                           ILoggerProvider? loggerProvider = null) =>
+                                           Action<HttpResilienceOptions>? configure,
+                                           ILoggerProvider? loggerProvider = null,
+                                           string clientName = ClientName) =>
         CreateServiceCollection(services =>
         {
             if (loggerProvider != null)
@@ -46,13 +47,105 @@ public class HttpClientBuilderExtensionsTests : BaseTest
                 services.AddLogging(builder => builder.AddProvider(loggerProvider).SetMinimumLevel(LogLevel.Trace));
             }
 
-            var httpClientBuilder = services.AddHttpClient(ClientName, client => client.BaseAddress = new Uri("https://krosoft.local/"));
+            var httpClientBuilder = services.AddHttpClient(clientName, client => client.BaseAddress = new Uri("https://krosoft.local/"));
             httpClientBuilder.AddResilience(configure);
             httpClientBuilder.ConfigurePrimaryHttpMessageHandler(() => handler);
         });
 
-    private static HttpClient GetHttpClient(ServiceProvider provider) =>
-        provider.GetRequiredService<IHttpClientFactory>().CreateClient(ClientName);
+    private static HttpClient GetHttpClient(ServiceProvider provider, string clientName = ClientName) =>
+        provider.GetRequiredService<IHttpClientFactory>().CreateClient(clientName);
+
+    [TestMethod]
+    public async Task RetryActif_NotFoundSansCodeSupplementaire_NeRejouePas()
+    {
+        var handler = MockHttpMessageHandler.Always(HttpStatusCode.NotFound);
+        await using var provider = CreateProvider(handler, Fast(options => options.Retry.Enabled = true));
+
+        var response = await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
+
+        Check.That(response.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
+        Check.That(handler.CallCount).IsEqualTo(1);
+    }
+
+    [TestMethod]
+    public async Task RetryActif_NotFoundDansLesCodesSupplementaires_RejoueLeNombreDeTentativesConfigure()
+    {
+        var handler = MockHttpMessageHandler.Always(HttpStatusCode.NotFound);
+        await using var provider = CreateProvider(handler, Fast(options =>
+        {
+            options.Retry.Enabled = true;
+            options.Retry.MaxRetryAttempts = 2;
+            options.Retry.AdditionalStatusCodes = [404];
+        }));
+
+        var response = await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
+
+        Check.That(response.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
+        Check.That(handler.CallCount).IsEqualTo(3);
+    }
+
+    [TestMethod]
+    public async Task RetryActif_NotFoundPuisSuccesAvecCodeSupplementaire_RetourneLaReponseDeLaDerniereTentative()
+    {
+        var handler = MockHttpMessageHandler.From(attempt => attempt < 2 ? HttpStatusCode.NotFound : HttpStatusCode.OK);
+        await using var provider = CreateProvider(handler, Fast(options =>
+        {
+            options.Retry.Enabled = true;
+            options.Retry.MaxRetryAttempts = 2;
+            options.Retry.AdditionalStatusCodes = [404];
+        }));
+
+        var response = await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
+
+        Check.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        Check.That(handler.CallCount).IsEqualTo(2);
+    }
+
+    [TestMethod]
+    public async Task RetryActif_ServiceIndisponibleAvecCodesSupplementaires_RejoueToujours()
+    {
+        var handler = MockHttpMessageHandler.Always(HttpStatusCode.ServiceUnavailable);
+        await using var provider = CreateProvider(handler, Fast(options =>
+        {
+            options.Retry.Enabled = true;
+            options.Retry.MaxRetryAttempts = 2;
+            options.Retry.AdditionalStatusCodes = [404];
+        }));
+
+        var response = await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
+
+        Check.That(response.StatusCode).IsEqualTo(HttpStatusCode.ServiceUnavailable);
+        Check.That(handler.CallCount).IsEqualTo(3);
+    }
+
+    [TestMethod]
+    public async Task RetryActif_ServiceIndisponibleSansCodeSupplementaire_Rejoue()
+    {
+        var handler = MockHttpMessageHandler.Always(HttpStatusCode.ServiceUnavailable);
+        await using var provider = CreateProvider(handler, Fast(options =>
+        {
+            options.Retry.Enabled = true;
+            options.Retry.MaxRetryAttempts = 2;
+        }));
+
+        var response = await GetHttpClient(provider).GetAsync(RequestUri, CancellationToken.None);
+
+        Check.That(response.StatusCode).IsEqualTo(HttpStatusCode.ServiceUnavailable);
+        Check.That(handler.CallCount).IsEqualTo(3);
+    }
+
+    [TestMethod]
+    public async Task RetryConfigure_NotFoundDansLesCodesSupplementairesDeLaConfiguration_Rejoue()
+    {
+        const string clientName = "client-retry-404";
+        var handler = MockHttpMessageHandler.Always(HttpStatusCode.NotFound);
+        await using var provider = CreateProvider(handler, null, clientName: clientName);
+
+        var response = await GetHttpClient(provider, clientName).GetAsync(RequestUri, CancellationToken.None);
+
+        Check.That(response.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
+        Check.That(handler.CallCount).IsEqualTo(3);
+    }
 
     [TestMethod]
     public async Task TotalRequestTimeoutActif_HttpClient_NeutraliseLeTimeoutDuHttpClient()

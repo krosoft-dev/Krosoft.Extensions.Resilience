@@ -57,14 +57,7 @@ public static class HttpClientBuilderExtensions
 
             if (options.Retry.Enabled)
             {
-                pipelineBuilder.AddRetry(new HttpRetryStrategyOptions
-                {
-                    Name = "Retry",
-                    MaxRetryAttempts = options.Retry.MaxRetryAttempts,
-                    Delay = options.Retry.Delay,
-                    BackoffType = DelayBackoffType.Exponential,
-                    UseJitter = true
-                });
+                pipelineBuilder.AddRetry(CreateRetryStrategyOptions(options.Retry));
             }
 
             if (options.CircuitBreaker.Enabled)
@@ -90,6 +83,28 @@ public static class HttpClientBuilderExtensions
         });
 
         return httpClientBuilder;
+    }
+
+    private static HttpRetryStrategyOptions CreateRetryStrategyOptions(HttpRetryOptions retry)
+    {
+        var strategyOptions = new HttpRetryStrategyOptions
+        {
+            Name = "Retry",
+            MaxRetryAttempts = retry.MaxRetryAttempts,
+            Delay = retry.Delay,
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = true
+        };
+
+        if (retry.AdditionalStatusCodes.Length > 0)
+        {
+            var additionalStatusCodes = retry.AdditionalStatusCodes.ToHashSet();
+            strategyOptions.ShouldHandle = args => ValueTask.FromResult(
+                HttpClientResiliencePredicates.IsTransient(args.Outcome) ||
+                (args.Outcome.Result is { } response && additionalStatusCodes.Contains((int)response.StatusCode)));
+        }
+
+        return strategyOptions;
     }
 
     private static void EnsureNotAlreadyRegistered(IServiceCollection services, string clientName)

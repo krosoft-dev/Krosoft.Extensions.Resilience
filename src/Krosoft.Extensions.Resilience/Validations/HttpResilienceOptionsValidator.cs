@@ -8,6 +8,9 @@ internal sealed class HttpResilienceOptionsValidator : IValidateOptions<HttpResi
     private const string RetryPrefix = nameof(HttpResilienceOptions.Retry);
     private const string CircuitBreakerPrefix = nameof(HttpResilienceOptions.CircuitBreaker);
 
+    private const int MinStatusCode = 100;
+    private const int MaxStatusCode = 599;
+
     private static readonly TimeSpan MaxDuration = TimeSpan.FromDays(1);
     private static readonly TimeSpan MinTimeout = TimeSpan.FromMilliseconds(1);
     private static readonly TimeSpan MinCircuitBreakerDuration = TimeSpan.FromMilliseconds(500);
@@ -81,6 +84,12 @@ internal sealed class HttpResilienceOptionsValidator : IValidateOptions<HttpResi
         }
 
         CheckRange(retry.Delay, TimeSpan.Zero, MaxDuration, $"{RetryPrefix}.{nameof(HttpRetryOptions.Delay)}", failures);
+
+        var invalidStatusCodes = retry.AdditionalStatusCodes.Where(statusCode => statusCode is < MinStatusCode or > MaxStatusCode).ToList();
+        if (invalidStatusCodes.Count > 0)
+        {
+            failures.Add($"'{RetryPrefix}.{nameof(HttpRetryOptions.AdditionalStatusCodes)}' ne doit contenir que des codes HTTP compris entre {MinStatusCode} et {MaxStatusCode}, or il contient {string.Join(", ", invalidStatusCodes)}.");
+        }
     }
 
     private static void ValidateCircuitBreaker(HttpResilienceOptions options, List<string> failures)

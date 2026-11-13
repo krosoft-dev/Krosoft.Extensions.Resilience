@@ -76,6 +76,52 @@ public class HttpResilienceOptionsBindingTests : BaseTest
     }
 
     [TestMethod]
+    public void Options_CodesSupplementairesDansLaSurchargeParClient_SontLies()
+    {
+        const string clientName = "client-retry-404";
+        using var provider = CreateServiceCollection(services =>
+        {
+            services.AddHttpClient(ClientSansSurcharge).AddResilience();
+            services.AddHttpClient(clientName).AddResilience();
+        });
+
+        Check.That(GetOptions(provider, clientName).Retry.AdditionalStatusCodes).ContainsExactly(404);
+        Check.That(GetOptions(provider, ClientSansSurcharge).Retry.AdditionalStatusCodes).IsEmpty();
+    }
+
+    [TestMethod]
+    public void Options_CodesSupplementairesCommunsEtParClient_SAdditionnent()
+    {
+        var configuration = new ConfigurationBuilder()
+                            .AddInMemoryCollection(new Dictionary<string, string?>
+                            {
+                                ["HttpResilience:Retry:Enabled"] = "true",
+                                ["HttpResilience:Retry:AdditionalStatusCodes:0"] = "502",
+                                [$"HttpResilience:Clients:{ClientSansSurcharge}:Retry:AdditionalStatusCodes:0"] = "404"
+                            })
+                            .Build();
+        using var provider = CreateServiceCollection(services =>
+        {
+            services.AddSingleton<IConfiguration>(configuration);
+            services.AddHttpClient(ClientSansSurcharge).AddResilience();
+        });
+
+        Check.That(GetOptions(provider, ClientSansSurcharge).Retry.AdditionalStatusCodes).ContainsExactly(502, 404);
+    }
+
+    [TestMethod]
+    public void Options_CodesSupplementairesParCode_SontLies()
+    {
+        using var provider = CreateServiceCollection(services =>
+        {
+            services.AddHttpClient(ClientSansSurcharge)
+                    .AddResilience(options => options.Retry.AdditionalStatusCodes = [404, 409]);
+        });
+
+        Check.That(GetOptions(provider, ClientSansSurcharge).Retry.AdditionalStatusCodes).ContainsExactly(404, 409);
+    }
+
+    [TestMethod]
     public void ValeursParDefaut_ToutesLesStrategiesSontDesactivees()
     {
         var options = new HttpResilienceOptions();
@@ -87,6 +133,7 @@ public class HttpResilienceOptionsBindingTests : BaseTest
         Check.That(options.Retry.Enabled).IsFalse();
         Check.That(options.Retry.MaxRetryAttempts).IsEqualTo(3);
         Check.That(options.Retry.Delay).IsEqualTo(TimeSpan.FromSeconds(2));
+        Check.That(options.Retry.AdditionalStatusCodes).IsEmpty();
         Check.That(options.CircuitBreaker.Enabled).IsFalse();
         Check.That(options.CircuitBreaker.FailureRatio).IsEqualTo(0.5);
         Check.That(options.CircuitBreaker.MinimumThroughput).IsEqualTo(10);
