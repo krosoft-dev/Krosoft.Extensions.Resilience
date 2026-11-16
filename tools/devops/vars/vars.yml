@@ -1,5 +1,5 @@
 variables:
   dotNetVersion: "11.0.x"
-  dotNetRuntimes: "10.0.x"
+  dotNetAdditionalSdks: "10.0.x"
   sonarCloudProjectKey: "krosoft-dev_Krosoft.Extensions.Resilience"
   sonarCloudProjectName: "Krosoft.Extensions.Resilience"
