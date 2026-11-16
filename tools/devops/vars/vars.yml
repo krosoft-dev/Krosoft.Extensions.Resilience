@@ -1,20 +1,5 @@
 variables:
-  # Agent VM image name
-  vmImage: "ubuntu-latest"
-
-  # .net
-  dotNetVersion: "10.0.x"
-  buildConfiguration: "Release"
-  buildPlatform: "AnyCPU"
-  buildProjects: "**/*.csproj"
-  testProjects: "**/*Tests/*.csproj"
-  publishProjects: "**/*Api.csproj"
-  warningThreshold: 10
-  coverageThreshold: 10
-  disable.coverage.autogenerate: "true"
-
-  #SonarCloud
-  sonarCloudEndpoint: "SonarCloud"
-  sonarCloudOrganization: "krosoft-dev"
+  dotNetVersion: "11.0.x"
+  dotNetRuntimes: "10.0.x"
   sonarCloudProjectKey: "krosoft-dev_Krosoft.Extensions.Resilience"
   sonarCloudProjectName: "Krosoft.Extensions.Resilience"

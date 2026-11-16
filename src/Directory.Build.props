@@ -1,7 +1,7 @@
 <Project>
 	<Import Project="$([MSBuild]::GetPathOfFileAbove($(MSBuildThisFile), '$(MSBuildThisFileDirectory)../'))" Condition="$([MSBuild]::GetPathOfFileAbove($(MSBuildThisFile), '$(MSBuildThisFileDirectory)../')) != ''"/>
 	<PropertyGroup>
-		<TargetFrameworks>net10.0</TargetFrameworks>
+		<TargetFrameworks>net10.0;net11.0</TargetFrameworks>
 		<AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
 		<IsPackable>true</IsPackable>
 		<IsTestProject>false</IsTestProject>

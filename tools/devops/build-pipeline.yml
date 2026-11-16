@@ -10,23 +10,5 @@ resources:
       name: krosoft-dev/Krosoft.Extensions
       endpoint: krosoft-dev
 
-variables:
-  - template: ./vars/vars.yml
-
-stages:
-  - template: tools/devops/templates/stages/build-template.yml@Krosoft.Extensions
-    parameters:
-      vmImage: ${{ variables.vmImage }}
-      dotNetVersion: ${{ variables.dotNetVersion }}
-      buildConfiguration: ${{ variables.buildConfiguration }}
-      buildPlatform: ${{ variables.buildPlatform }}
-      buildProjects: ${{ variables.buildProjects }}
-      testProjects: ${{ variables.testProjects }}
-      warningThreshold: ${{ variables.warningThreshold }}
-      coverageThreshold: ${{ variables.coverageThreshold }}
-      sonarCloudEndpoint: ${{ variables.sonarCloudEndpoint }}
-      sonarCloudOrganization: ${{ variables.sonarCloudOrganization }}
-      sonarCloudProjectKey: ${{ variables.sonarCloudProjectKey }}
-      sonarCloudProjectName: ${{ variables.sonarCloudProjectName }}
-      runUnitTests: true
-      runSonarCloudAnalyze: true
+extends:
+  template: tools/devops/templates/pipelines/build-template.yml@Krosoft.Extensions
